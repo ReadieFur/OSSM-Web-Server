@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/OSSMWebServer.csproj" />
+  <Project Path="test/OSSMWebServer.Test.csproj" />
+</Solution>
