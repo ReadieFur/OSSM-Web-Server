@@ -1,14 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace OSSMWebServer.Test
 {
     public class AssertJsonDocTests
     {
         [Fact]
-        public void AssertJsonDoc_Matches_ShouldPassForMatchingObjects()
+        public void AssertJsonDoc_Satisfies_ShouldPassForMatchingObjects()
         {
             var expected = new
             {
@@ -20,7 +17,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_ShouldPassWithPartialMatchingObjects()
+        public void AssertJsonDoc_Satisfies_ShouldPassWithPartialMatchingObjects()
         {
             var expected = new
             {
@@ -31,7 +28,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_ShouldThrowForMissingProperty()
+        public void AssertJsonDoc_Satisfies_ShouldThrowForMissingProperty()
         {
             var expected = new
             {
@@ -43,7 +40,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_WithPredicate_ShouldPassForValidValue()
+        public void AssertJsonDoc_Satisfies_WithPredicate_ShouldPassForValidValue()
         {
             var expected = new
             {
@@ -54,7 +51,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_WithPredicate_ShouldThrowForInvalidValue()
+        public void AssertJsonDoc_Satisfies_WithPredicate_ShouldThrowForInvalidValue()
         {
             var expected = new
             {
@@ -65,7 +62,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_WithTypeCheck_ShouldPassForValidType()
+        public void AssertJsonDoc_Satisfies_WithTypeCheck_ShouldPassForValidType()
         {
             var expected = new
             {
@@ -76,7 +73,7 @@ namespace OSSMWebServer.Test
         }
 
         [Fact]
-        public void AssertJsonDoc_Matches_WithTypeCheck_ShouldThrowForInvalidType()
+        public void AssertJsonDoc_Satisfies_WithTypeCheck_ShouldThrowForInvalidType()
         {
             var expected = new
             {
@@ -84,6 +81,19 @@ namespace OSSMWebServer.Test
             };
             var actualJson = JsonDocument.Parse("{\"Age\":\"twenty-five\"}");
             Assert.Throws<Exception>(() => AssertJsonDoc.Satisfies(expected, actualJson.RootElement));
+        }
+
+        [Fact]
+        public void AssertJsonDoc_Satisfies_CaseInsensitive_ShouldPassForMatchingObjects()
+        {
+            var expected = new
+            {
+                name = "Test",
+                age = 30,
+            };
+            var actualJson = JsonDocument.Parse("{\"Name\":\"Test\",\"Age\":30}");
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            AssertJsonDoc.Satisfies(expected, actualJson.RootElement, options);
         }
     }
 }

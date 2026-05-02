@@ -14,7 +14,7 @@ namespace OSSMWebServer.Test
             _server = fixture;
         }
 
-        private static CancellationToken CreateTimeoutToken(int milliseconds = 5000)
+        private static CancellationToken CreateTimeoutToken(int milliseconds = 5_000)
         {
             CancellationTokenSource cts = new();
             cts.CancelAfter(milliseconds);
@@ -29,16 +29,16 @@ namespace OSSMWebServer.Test
             return client;
         }
 
-        private async Task SendClient(ClientWebSocket client, object body)
+        private async Task SendClient(ClientWebSocket client, object body, CancellationToken? ct = null)
         {
             string json = JsonSerializer.Serialize(body);
-            await client.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, CreateTimeoutToken());
+            await client.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, ct ?? CreateTimeoutToken());
         }
 
-        private async Task<JsonDocument> ReceiveClient(ClientWebSocket client)
+        private async Task<JsonDocument> ReceiveClient(ClientWebSocket client, CancellationToken? ct = null)
         {
             byte[] recvBuffer = new byte[4096];
-            WebSocketReceiveResult result = await client.ReceiveAsync(recvBuffer, CreateTimeoutToken());
+            WebSocketReceiveResult result = await client.ReceiveAsync(recvBuffer, ct ?? CreateTimeoutToken());
             string recvJson = Encoding.UTF8.GetString(recvBuffer, 0, result.Count);
             return JsonDocument.Parse(recvJson);
         }
@@ -203,6 +203,166 @@ namespace OSSMWebServer.Test
 
             // Verify the server has removed the guest from the room
             Assert.DoesNotContain(internalClient, room.Guests);
+        }
+
+        [Fact]
+        public async Task HostSendsInvalidState_ShouldReturnError()
+        {
+            using ClientWebSocket host = await CreateClient();
+
+            await SendClient(host, new { command = ECommand.CreateRoom });
+            _ = await ReceiveClient(host);
+            
+            // Host sends invalid state (e.g., negative speed)
+            await SendClient(host, new
+            {
+                command = ECommand.StateUpdate,
+                state = new ROssmState()
+                {
+                    Speed = -10
+                }
+            });
+            
+            // Host receives error response
+            AssertJsonDoc.Satisfies(new
+            {
+                command = ECommand.StateUpdate,
+                error = nameof(ArgumentOutOfRangeException)
+            }, (await ReceiveClient(host)).RootElement);
+        }
+
+        [Fact]
+        public async Task HostSendsValidState_ShouldBeAccepted()
+        {
+            using ClientWebSocket host = await CreateClient();
+
+            await SendClient(host, new { command = ECommand.CreateRoom });
+            _ = await ReceiveClient(host);
+
+            await SendClient(host, new
+            {
+                command = ECommand.StateUpdate,
+                state = new ROssmState()
+                {
+                    Speed = 10,
+                    Stroke = 5,
+                }
+            });
+
+            // Host shouldn't recieve any response
+            await Assert.ThrowsAsync<TaskCanceledException>(async () => await ReceiveClient(host, CreateTimeoutToken(1_000)));
+        }
+
+        [Fact]
+        public async Task GuestSendsState_ShouldBeRelayedToHost()
+        {
+            using ClientWebSocket host = await CreateClient();
+            using ClientWebSocket guest = await CreateClient();
+
+            // Host creates room
+            await SendClient(host, new { command = ECommand.CreateRoom });
+            string roomId = (await ReceiveClient(host)).RootElement.GetProperty("roomId").GetString()!;
+
+            // Guest requests to join room
+            await SendClient(guest, new { command = ECommand.JoinRoom, roomId });
+            _ = await ReceiveClient(guest);
+
+            // Host receives join request, accept it
+            string guestId = (await ReceiveClient(host)).RootElement.GetProperty("clientId").GetString()!;
+            await SendClient(host, new { command = ECommand.JoinRequest, clientId = guestId, approved = true });
+            _ = await ReceiveClient(guest);
+
+            ROssmState state = new ROssmState()
+            {
+                Speed = 15,
+                Stroke = 7,
+            };
+
+            // Client sends state update
+            await SendClient(guest, new { command = ECommand.StateUpdate, state });
+
+            // Host receives matching state update from server identified as coming from the guest
+            AssertJsonDoc.Satisfies(new
+            {
+                command = ECommand.StateUpdate,
+                clientId = guestId,
+                state
+            }, (await ReceiveClient(host)).RootElement, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+
+        [Fact]
+        public async Task HostSendsState_ShouldBeRecievedByGuest()
+        {
+            using ClientWebSocket host = await CreateClient();
+            using ClientWebSocket guest = await CreateClient();
+
+            // Host creates room
+            await SendClient(host, new { command = ECommand.CreateRoom });
+            string roomId = (await ReceiveClient(host)).RootElement.GetProperty("roomId").GetString()!;
+            
+            // Guest requests to join room
+            await SendClient(guest, new { command = ECommand.JoinRoom, roomId });
+            _ = await ReceiveClient(guest);
+            
+            // Host receives join request, accept it
+            string guestId = (await ReceiveClient(host)).RootElement.GetProperty("clientId").GetString()!;
+            await SendClient(host, new { command = ECommand.JoinRequest, clientId = guestId, approved = true });
+            _ = await ReceiveClient(guest);
+            
+            ROssmState state = new ROssmState()
+            {
+                Speed = 20,
+                Stroke = 10,
+            };
+            
+            // Host sends state update
+            await SendClient(host, new { command = ECommand.StateUpdate, state });
+            
+            // Guest receives matching state update from server identified as coming from the host
+            AssertJsonDoc.Satisfies(new
+            {
+                command = ECommand.StateUpdate,
+                state
+            }, (await ReceiveClient(guest)).RootElement, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+
+        [Fact]
+        public async Task ClientSendsState_HostShouldBroadcastBack()
+        {
+            using ClientWebSocket host = await CreateClient();
+            using ClientWebSocket guest = await CreateClient();
+
+            // Host creates room
+            await SendClient(host, new { command = ECommand.CreateRoom });
+            string roomId = (await ReceiveClient(host)).RootElement.GetProperty("roomId").GetString()!;
+
+            // Guest requests to join room
+            await SendClient(guest, new { command = ECommand.JoinRoom, roomId });
+            _ = await ReceiveClient(guest);
+
+            // Host receives join request, accept it
+            string guestId = (await ReceiveClient(host)).RootElement.GetProperty("clientId").GetString()!;
+            await SendClient(host, new { command = ECommand.JoinRequest, clientId = guestId, approved = true });
+            _ = await ReceiveClient(guest);
+
+            ROssmState state = new ROssmState()
+            {
+                Speed = 15,
+                Stroke = 7,
+            };
+
+            // Client sends state update
+            await SendClient(guest, new { command = ECommand.StateUpdate, state });
+
+            // Host receives matching state update from server identified as coming from the guest
+            await host.SendAsync(Encoding.UTF8.GetBytes((await ReceiveClient(host)).RootElement.ToString()), WebSocketMessageType.Text, true, CreateTimeoutToken());
+
+            // Client recieves same state update back from host
+            AssertJsonDoc.Satisfies(new
+            {
+                command = ECommand.StateUpdate,
+                state
+            }, (await ReceiveClient(guest)).RootElement, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
     }
 }

@@ -106,7 +106,7 @@ namespace OSSMWebServer
                 // Remove the room from the manager
                 _rooms.TryRemove(client.ActiveRoom.Id, out _);
 
-                // CNotify all clients in the room to leave
+                // Notify all clients in the room to leave
                 foreach (Client guest in client.ActiveRoom.Guests)
                     await guest.NotifyAsync(new { command = ECommand.LeaveRoom, clientId = client.Id, message = "Host has left the room" });
             }
@@ -119,6 +119,29 @@ namespace OSSMWebServer
 
                 // Notify the host that the clienthas left
                 await client.ActiveRoom.Host.NotifyAsync(new { command = ECommand.LeaveRoom, clientId = client.Id, message = "Guest has left the room" });
+            }
+        }
+
+        public async Task StateUpdate(Client author, ROssmState state)
+        {
+            // Do some basic validation of the state data (avoid sending invalid/malicious data to other clients)
+            state.Validate();
+
+            if (author.ActiveRoom is not null && author.ActiveRoom.Host.Id == author.Id)
+            {
+                // Case: Author is the host, send state to all guests
+                foreach (Client guest in author.ActiveRoom.Guests)
+                    await guest.NotifyAsync(new { command = ECommand.StateUpdate, clientId = author.Id, state });
+            }
+            else if (author.ActiveRoom is not null)
+            {
+                // Case: Author is a guest, send state to the host (host will validate and report back the state to all guests)
+                await author.ActiveRoom.Host.NotifyAsync(new { command = ECommand.StateUpdate, clientId = author.Id, state });
+            }
+            else
+            {
+                // Case: Author is not in a room, ignore the state update
+                throw new InvalidOperationException("Not in a room");
             }
         }
     }

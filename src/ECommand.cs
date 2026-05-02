@@ -15,6 +15,7 @@
 
         #region Both
         LeaveRoom,
+        StateUpdate,
         #endregion
     }
 }

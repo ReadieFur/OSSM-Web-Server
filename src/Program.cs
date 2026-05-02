@@ -168,7 +168,22 @@ public partial class Program
                             {
                                 if (connection.ActiveRoom is null)
                                     throw new InvalidOperationException("You are not in a room");
+
                                 await roomManager.LeaveRoom(connection);
+
+                                break;
+                            }
+
+                        case ECommand.StateUpdate:
+                            {
+                                if (!json.RootElement.TryGetProperty("state", out JsonElement stateJson))
+                                    throw new ArgumentNullException("state");
+
+                                if (stateJson.Deserialize<ROssmState>() is not ROssmState state)
+                                    throw new Exception("Invalid state data");
+
+                                await roomManager.StateUpdate(connection, state);
+
                                 break;
                             }
                         #endregion

@@ -5,22 +5,36 @@ namespace OSSMWebServer.Test
 {
     public static class AssertJsonDoc
     {
-        public static void Satisfies(object expected, JsonElement actual)
+        public static void Satisfies(object expected, JsonElement actual, JsonSerializerOptions? options = null)
         {
+            if (options is null)
+                options = new JsonSerializerOptions();
+
             if (actual.ValueKind != JsonValueKind.Object)
                 throw new Exception($"Expected JSON object, got {actual.ValueKind}");
 
-            PropertyInfo[] props = expected.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
-
-            foreach (PropertyInfo prop in props)
+            foreach (PropertyInfo prop in expected.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
             {
-                if (!actual.TryGetProperty(prop.Name, out var jsonValue))
+                JsonElement jsonValue = default;
+                
+                bool found = false;
+                foreach (JsonProperty jsonProp in actual.EnumerateObject())
+                {
+                    if (string.Equals(jsonProp.Name, prop.Name, options.PropertyNameCaseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    {
+                        jsonValue = jsonProp.Value;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
                     throw new Exception($"Missing property '{prop.Name}'");
-                ValidateValue(prop.Name, jsonValue, prop.GetValue(expected));
+                
+                ValidateValue(prop.Name, jsonValue, prop.GetValue(expected), options);
             }
         }
 
-        private static void ValidateValue(string name, JsonElement json, object? expected)
+        private static void ValidateValue(string name, JsonElement json, object? expected, JsonSerializerOptions? options = null)
         {
             if (expected is null)
             {
@@ -62,7 +76,7 @@ namespace OSSMWebServer.Test
                 if (json.ValueKind != JsonValueKind.Object)
                     throw new Exception($"Property '{name}' expected object");
 
-                Satisfies(expected, json);
+                Satisfies(expected, json, options);
                 return;
             }
 
